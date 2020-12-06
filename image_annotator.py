@@ -8,6 +8,8 @@ import os
 
 from copy import deepcopy
 
+import cv2 
+
 
 class Annotate():
     def __init__(self,filenames, exclude_labeled=True):
@@ -40,14 +42,13 @@ class Annotate():
         self.fig.canvas.mpl_connect('button_press_event', self.onClick)
         self.fig.canvas.mpl_connect('key_press_event', self.onKey)
         self.fig.canvas.mpl_connect('scroll_event', self.onScroll)
-        
         self.draw_image()
 
     def draw_image( self ):
         filename = self.filenames[self.im_idx]
         self.ax.clear()
 
-        im = io.imread(filename) 
+        im = cv2.imread(filename) 
         self.ax.imshow(im, cmap=self.cmap)  
 
         instructions =  "Left: Last Image                    Right: Next Image \n" + \
@@ -176,7 +177,7 @@ class Annotate():
                 print(fn)
                 continue
 
-            im = io.imread(fn) 
+            im = cv2.imread(fn) 
             shape = np.array(im).shape[0:2]
             label_im = np.zeros(shape, np.uint8)           
 
@@ -195,6 +196,95 @@ class Annotate():
             
             fn_out = fn.replace('_input','_label')    
             io.imsave(fn_out , label_im)
+
+
+###########################################
+
+###########################################
+
+def select_video_frames(filename, out_dir="./training"):
+    
+    if not os.path.exists(out_dir):
+        os.makedirs(out_dir)
+    cap = cv2.VideoCapture(filename)            
+    
+    fn = filename.split("\\")[-1].split(".")[0]
+    
+    f_num = 0
+    while cap.isOpened():
+        
+        ret,frame = cap.read()
+        if not ret: break
+           
+        cv2.imshow("",frame)
+        quit = check_keys(out_dir, fn, f_num, frame)    
+        if quit: break
+        
+        f_num +=1  
+                     
+    cap.release()
+    cv2.destroyAllWindows()  # destroy all the opened windows
+    
+    
+def select_dataset_frames(filename, data, out_dir="./training"):
+     
+    if not os.path.exists(out_dir):   os.makedirs(out_dir)
+        
+    fn = filename.split("\\")[-1].split(".")[0]
+    
+    cv2.namedWindow("", cv2.WINDOW_NORMAL)
+    cv2.resizeWindow("", 1400, 1400)   
+    
+    for t, im in enumerate(data):
+        
+        im = data[t]
+        im = norm_uint8(im)
+        
+        cv2.imshow("",im)  
+        quit = check_keys(out_dir, fn, im, t)
+        if quit: break
+                     
+    cv2.destroyAllWindows()  # destroy all the opened windows
+
+    
+def save_frames(out_dir,fn,data,t):
+
+    im = data[t]
+    im = norm_uint8(im)
+    fn_out = f"{out_dir}/{fn}_f{t}_input.tiff"
+    cv2.imwrite(fn_out, im)    
+    
+def norm_uint8(im):
+    
+    im = im*1.
+    im -= np.min(im)
+    im /= np.max(im)
+    im = (im*255).astype(np.uint8)  
+    
+    return im
+    
+def save_input_frame(out_dir,fn,t):
+    read_frame(fn, n )
+    
+    
+def read_frame(fn, n ):
+    reader = cv2.VideoCapture(fn)
+    len_frames = reader.get(cv2.CAP_PROP_FRAME_COUNT)
+    reader.set(1, n)
+    ret,im = reader.read()
+    return im 
+
+def check_keys(out_dir, fn, im, t):
+    key = cv2.waitKeyEx(1)
+    quit=False
+    if key>0:
+        if key == ord('q'):                
+            quit=True
+        elif key == ord('s'):
+            fn_out = f"{out_dir}/{fn}_f{t}_input.tiff"
+            cv2.imwrite(fn_out, im)
+            print(fn_out)           
+    return quit
 
         
         
