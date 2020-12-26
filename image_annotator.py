@@ -12,16 +12,15 @@ import cv2
 
 
 class Annotate():
-    def __init__(self,filenames, exclude_labeled=True):
+    def __init__(self,filenames, exclude_labeled=True, run=True):
 
-        plt.rcParams['keymap.fullscreen'] = []
-        
         if exclude_labeled:
             filenames = [fn for fn in filenames if not os.path.exists(fn.replace("_input","_label"))]
         
         if len(filenames)==0:
             print("no images")
             return
+
         self.filenames = filenames
         self.im_idx = 0
         self.cur_idx = 0
@@ -32,10 +31,14 @@ class Annotate():
         self.polygons =  [[] for i in range(len(filenames))]
         self.cur_polygons = []
 
-        self.open_window()
+        if run:
+            self.open_window()
 
+    
 
     def open_window(self):
+
+        plt.rcParams['keymap.fullscreen'] = []
         fig, ax = plt.subplots(figsize=(18,15))
         self.fig = fig
         self.ax = ax
@@ -44,11 +47,22 @@ class Annotate():
         self.fig.canvas.mpl_connect('scroll_event', self.onScroll)
         self.draw_image()
 
+    def read_image(self,filename):
+        im = cv2.imread(filename) 
+        return im 
+
     def draw_image( self ):
         filename = self.filenames[self.im_idx]
-        self.ax.clear()
+        
+        im = self.read_image(filename)
 
-        im = cv2.imread(filename) 
+        if im is None:
+            print( str(self.im_idx) + ": Not Found" )
+            self.filenames.pop(self.im_idx)
+            self.polygons.pop(self.im_idx)
+            self.draw_image()
+
+        self.ax.clear()
         self.ax.imshow(im, cmap=self.cmap)  
 
         instructions =  "Left: Last Image                    Right: Next Image \n" + \
@@ -56,8 +70,12 @@ class Annotate():
                         "Enter/Right Click: Next Object      Backspace: Remove Point\n" + \
                         "Escape: Close Tool \n"
 
+
+        fn_str = filename
+        fn_str = ("..."+fn_str[-20:] if len(fn_str) > 20 else fn_str)
+
         self.ax.set_title( instructions , fontsize = 20  )
-        self.ax.set_xlabel(filename + " : Label " + str(self.cur_idx),  fontsize = 20 )
+        self.ax.set_xlabel(fn_str + "\n Label " + str(self.cur_idx),  fontsize = 20 )
         self.draw_polygons()
         
     def onKey(self, event):
@@ -169,38 +187,61 @@ class Annotate():
 
         filenames = self.filenames
         polygons = self.polygons
-        print("x")
+        
         for i, fn in enumerate(filenames):
 
+            poly = polygons[i]
 
-            if len(polygons[i])==0:
-                print(fn)
+            if len(poly)==0:  
                 continue
 
-            im = cv2.imread(fn) 
-            shape = np.array(im).shape[0:2]
-            label_im = np.zeros(shape, np.uint8)           
 
-            for labels in polygons[i]:
-                lab_idx, poly = labels["idx"],labels["pts"]
-                if len(poly)==1:
-                    poly_coor = np.round(poly)[:,::-1]
-                    mask = circle(poly_coor[0,0], poly_coor[0,1], 10)
-                    label_im[mask] = lab_idx+1
+            print("saving labels for "+ str(len(poly)) + " objects:" + fn) 
+            im = self.read_image(fn)
+            labeled = self.gen_index_image(im,poly)
+            self.save_labeled( fn, labeled )
 
-                if len(poly)>2:
-                    poly_coor = np.round(poly)[:,::-1]
-                    mask = polygon2mask(shape, poly_coor)
-                    label_im[mask] = lab_idx+1      
-            print(fn) 
+
+    def gen_index_image(self,im,poly):
+
+        shape = np.array(im).shape[0:2]
+        label_im = np.zeros(shape, np.uint8)           
+
+        for labels in poly:
+            lab_idx, poly = labels["idx"],labels["pts"]
+            if len(poly)==1:
+                poly_coor = np.round(poly)[:,::-1]
+                mask = circle(poly_coor[0,0], poly_coor[0,1], 10)
+                label_im[mask] = lab_idx+1
+
+            if len(poly)>2:
+                poly_coor = np.round(poly)[:,::-1]
+                mask = polygon2mask(shape, poly_coor)
+                label_im[mask] = lab_idx+1  
+
+        return  label_im
+
             
-            fn_out = fn.replace('_input','_label')    
-            io.imsave(fn_out , label_im)
+    def save_labeled(self, fn, label_im):
+
+        fn_out = fn.replace('_input','_label')    
+        io.imsave(fn_out , label_im)
+
+
+
+
+
+
+
+
+
+
 
 
 ###########################################
 
 ###########################################
+
 
 def select_video_frames(filename, out_dir="./training"):
     
