@@ -71,7 +71,6 @@ class Annotate():
             self.polygons.pop(self.im_idx)
 
             im = self.load_data()
-        im = im *255
         
         if im.dtype==np.bool:        im = im*255
         if im.ndim == 2:             im = im[...,None]
