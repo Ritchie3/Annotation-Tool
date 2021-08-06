@@ -88,15 +88,17 @@ class Annotate():
         
         if self.model is not None:
             if self.draw_prediction:
-
-                pred = self.model.segment(im)
+                
+                im_in = np.mean(im,axis=2) 
+                pred = self.model.segment(im_in)
 
                 im = np.mean(im,axis=2)           
-                im = im[...,None]*[1,1,1]          
+                im = im[...,None]*[1,1,1]       
 
-                lb_rgb = pred.transpose([1,2,0])
-                lb_rgb = lb_rgb * [1,0,0] 
-                im = im*(1-lb_rgb) + lb_rgb*255
+                pred = pred.transpose([1,2,0])
+
+                im = channels2rgb(pred)
+
                 #
         if im.shape[-1]==1:          im = im*[1,1,1]
         im = im.astype(np.uint8)
@@ -297,6 +299,17 @@ def read_image(self,filename):
     im = cv2.imread(filename) 
     return im
 
+def channels2rgb(pd):
+
+    clrmap = np.array([[1,0,0],[0,1,0],[0,0,1],[1,1,0],[1,0,1],[0,1,1]])
+
+    if   pd.shape[2] == 1:     pd = np.tile(pd,(1,1,3))
+    elif pd.shape[2] == 3:     pd = pd
+    else: pd = np.dot(pd, clrmap[:pd.shape[2]])
+    pd = pd*255
+
+    return pd
+
 ###########################################
 ##          Video Frame Selecting 
 ###########################################
@@ -331,14 +344,23 @@ def select_dataset_frames(filename, data, out_dir="./training"):
     fn = filename.split("\\")[-1].split(".")[0]
     
     cv2.namedWindow("", cv2.WINDOW_NORMAL)
-    cv2.resizeWindow("", 1400, 1400)   
+    cv2.resizeWindow("", 900, 600)   
+
+    rate = 1000
     
-    for t, im in enumerate(data):
+    for t in range(len(data)):
+
+        if t<5000: continue 
+        if t>50000: continue 
+        if np.mod(t,rate)>0: continue
+        print(t)
         
         im = data[t]
         im = norm_uint8(im)
         
         cv2.imshow("",im)  
+        save_frame(out_dir, fn, im, t )
+
         quit = check_keys(out_dir, fn, im, t)
         if quit: break
                      
@@ -370,6 +392,12 @@ def read_frame(fn, n ):
     ret,im = reader.read()
     return im 
 
+def save_frame(out_dir, fn, im, t ):
+    fn_out = f"{out_dir}/{fn}_f{t}_input.tiff"
+    cv2.imwrite(fn_out, im)
+    print(fn_out)     
+
+
 def check_keys(out_dir, fn, im, t):
     key = cv2.waitKeyEx(1)
     quit=False
@@ -377,9 +405,8 @@ def check_keys(out_dir, fn, im, t):
         if key == ord('q'):                
             quit=True
         elif key == ord('s'):
-            fn_out = f"{out_dir}/{fn}_f{t}_input.tiff"
-            cv2.imwrite(fn_out, im)
-            print(fn_out)           
+            save_frame(out_dir, fn, im, t )
+                  
     return quit
 
 ############################################
