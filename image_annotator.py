@@ -306,18 +306,24 @@ class Annotate():
 import h5py
 
 def save_labeled(fn, label_im):
-    fn_out = fn.replace('_input','_label')    
-    io.imsave(fn_out , label_im)
+
+    if ".jpg" in fn.lower() or ".tif" in fn.lower():
+        fn_out = fn.replace('_input','_label')    
+        io.imsave(fn_out , label_im)
+    if ".h5" in fn.lower():
+
+        add_dataset(fn, label_im, dataset="labels")
+
 
 def read_H5(fn, dataset="mask_data"):
     with h5py.File(fn, 'r') as fh:   
         if dataset not in fh.keys():  return None
         data = np.array(  fh[dataset][:]  )     
     
-    if data.dtype==np.uint8:
-        pass
+    if data.dtype==np.uint8:         pass
     else:
         if data.max()<=1:  data = (data*255).astype(np.uint8)
+
     return data
 
 def add_dataset(fn, data, dataset="labels"):
@@ -343,6 +349,28 @@ def channels2rgb(pd):
     pd = (pd*255).astype(np.uint8)
     
     return pd
+   
+def add_dataset(fn, data, dataset="labels"):
+    with h5py.File(fn, 'r+') as fh:
+        if dataset in fh.keys():  
+            del fh[dataset]
+            fh[dataset] = data
+        else:   
+            fh.create_dataset(dataset, data=data , compression="lzf")
+            
+def resize_label(fn):
+    
+    lbl = read_H5(fn, dataset="labels")
+    if lbl is None:      return 
+
+    msk = read_H5(fn, dataset="mask_data")  
+    lbl = cv2.resize(lbl,msk.shape[::-1])
+    add_dataset(fn, lbl, dataset="labels")  
+
+
+
+
+
 
 ###########################################
 ##          Video Frame Selecting 
@@ -415,7 +443,7 @@ def norm_uint8(im):
     return im
     
 def save_input_frame(out_dir,fn,t):
-    read_frame(fn, n )
+    read_frame(fn, t )
     
 def read_frame(fn, n ):
     reader = cv2.VideoCapture(fn)
@@ -428,7 +456,6 @@ def save_frame(out_dir, fn, im, t ):
     fn_out = f"{out_dir}/{fn}_f{t}_input.tiff"
     cv2.imwrite(fn_out, im)
     print(fn_out)     
-
 
 def check_keys(out_dir, fn, im, t):
     key = cv2.waitKeyEx(1)
