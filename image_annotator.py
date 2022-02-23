@@ -34,6 +34,7 @@ class Annotate():
 
         self.model = None
         self.draw_prediction = False
+        self.draw_label = False
 
         self.polygons =  [[] for i in range(len(filenames))]
         self.cur_polygons = []
@@ -54,11 +55,30 @@ class Annotate():
 
     def read_image(self,filename):
 
-        ## Add Switch
-        im = cv2.imread(filename) 
+        im = None
+        if ".jpg" in filename.lower() or ".tif" in filename.lower():
+            im = cv2.imread(filename) 
+        if ".h5" in filename.lower():
+            im = read_H5(filename)
 
         return im
     
+    def load_labeled(self):
+
+        filename = self.filenames[self.im_idx]
+
+        im = None
+        if ".jpg" in filename.lower() or ".tif" in filename.lower():
+            im = cv2.imread(filename) 
+        if ".h5" in filename.lower():
+            im = read_H5(filename,dataset="labels")
+
+        if im is not None:
+            if im.dtype==np.bool:        im = im*255
+            if im.ndim == 2:             im = im[...,None]
+            im = im.astype(np.uint8)
+        return im
+
     def load_data(self):
 
         filename = self.filenames[self.im_idx]
@@ -74,8 +94,6 @@ class Annotate():
         
         if im.dtype==np.bool:        im = im*255
         if im.ndim == 2:             im = im[...,None]
-        
-
         im = im.astype(np.uint8)
 
         return im 
@@ -96,9 +114,16 @@ class Annotate():
                 im = im[...,None]*[1,1,1]       
 
                 pred = pred.transpose([1,2,0])
-
+                #pred = pred > 0.8
                 im = channels2rgb(pred)
 
+
+        if self.draw_label:
+
+            labeled = self.load_labeled()
+
+            if labeled is not None:
+                im = channels2rgb(labeled)
                 #
         if im.shape[-1]==1:          im = im*[1,1,1]
         im = im.astype(np.uint8)
@@ -162,6 +187,10 @@ class Annotate():
 
         if event.key == "g":    
             self.cmap = "gray"
+            self.draw_image( )
+
+        if event.key == "l":
+            self.draw_label = not self.draw_label
             self.draw_image( )
 
         if event.key == "m":
@@ -274,17 +303,21 @@ class Annotate():
 ###########################################
 #     Helper Functions 
 ###########################################
+import h5py
 
 def save_labeled(fn, label_im):
     fn_out = fn.replace('_input','_label')    
     io.imsave(fn_out , label_im)
 
-def read_H5(fn):
-    dataset = "mask_data"
+def read_H5(fn, dataset="mask_data"):
     with h5py.File(fn, 'r') as fh:   
-        if dataset not in fh.keys(): 
-            return None
-        data = np.array(  fh[dataset][:]  )       
+        if dataset not in fh.keys():  return None
+        data = np.array(  fh[dataset][:]  )     
+    
+    if data.dtype==np.uint8:
+        pass
+    else:
+        if data.max()<=1:  data = (data*255).astype(np.uint8)
     return data
 
 def add_dataset(fn, data, dataset="labels"):
@@ -306,8 +339,9 @@ def channels2rgb(pd):
     if   pd.shape[2] == 1:     pd = np.tile(pd,(1,1,3))
     elif pd.shape[2] == 3:     pd = pd
     else: pd = np.dot(pd, clrmap[:pd.shape[2]])
-    pd = pd*255
 
+    pd = (pd*255).astype(np.uint8)
+    
     return pd
 
 ###########################################
@@ -353,7 +387,6 @@ def select_dataset_frames(filename, data, out_dir="./training"):
         if t<5000: continue 
         if t>50000: continue 
         if np.mod(t,rate)>0: continue
-        print(t)
         
         im = data[t]
         im = norm_uint8(im)
@@ -375,10 +408,9 @@ def save_frames(out_dir,fn,data,t):
     
 def norm_uint8(im):
     
-    im = im*1.
     im -= np.min(im)
-    im /= np.max(im)
-    im = (im*255).astype(np.uint8)  
+    im /= (np.max(im)*255)
+    im = im.astype(np.uint8)  
     
     return im
     
