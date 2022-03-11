@@ -1,4 +1,6 @@
 
+'turn off sciview'
+
 import matplotlib.pyplot as plt
 import numpy as np 
 from PIL import Image 
@@ -39,6 +41,8 @@ class Annotate():
         self.polygons =  [[] for i in range(len(filenames))]
         self.cur_polygons = []
 
+        self.nbands
+
         if run:
             self.open_window()
 
@@ -58,7 +62,9 @@ class Annotate():
         im = None
         if ".jpg" in filename.lower() or ".tif" in filename.lower():
             im = cv2.imread(filename) 
-        if ".h5" in filename.lower():
+        if "hypercube.h5" in filename.lower():
+            im = read_H5_hypercube(filename)
+        elif ".h5" in filename.lower():
             im = read_H5(filename)
 
         return im
@@ -70,13 +76,20 @@ class Annotate():
         im = None
         if ".jpg" in filename.lower() or ".tif" in filename.lower():
             im = cv2.imread(filename) 
-        if ".h5" in filename.lower():
+        if "hypercube.h5" in filename.lower():
+            im = read_H5_hypercube(filename,dataset="labels")
+        elif ".h5" in filename.lower():
             im = read_H5(filename,dataset="labels")
-
         if im is not None:
             if im.dtype==np.bool:        im = im*255
             if im.ndim == 2:             im = im[...,None]
             im = im.astype(np.uint8)
+
+        if im.ndim == 3:
+            self.bands = im.shape[2]
+        else:
+            self.bands = 1
+
         return im
 
     def load_data(self):
@@ -95,13 +108,16 @@ class Annotate():
         if im.dtype==np.bool:        im = im*255
         if im.ndim == 2:             im = im[...,None]
         im = im.astype(np.uint8)
-
+        if im.ndim ==3:
+            self.bands = im.shape[2]
+        else:
+            self.bands = 1
         return im 
 
     def draw_image( self ):
         
-        im = self.load_data()
-
+        hc = self.load_data()
+        im = hc[:,:,1]  # choose band in case of hyperspectral data
         self.ax.clear()
         
         if self.model is not None:
@@ -305,6 +321,7 @@ class Annotate():
 ###########################################
 import h5py
 
+
 def save_labeled(fn, label_im):
 
     if ".jpg" in fn.lower() or ".tif" in fn.lower():
@@ -315,12 +332,27 @@ def save_labeled(fn, label_im):
         add_dataset(fn, label_im, dataset="labels")
 
 
+def read_H5_hypercube(fn, dataset="data"):
+    with h5py.File(fn, 'r') as fh:
+        if dataset not in fh['hypercube'].keys():  # ammended to read the hypercube format
+            return None
+        data = np.array(fh['hypercube'][dataset][:])
+
+    if data.dtype == np.uint8:
+        pass
+    else:
+        if data.max() <= 1:  data = (data * 255).astype(np.uint8)
+
+    return data
+
 def read_H5(fn, dataset="mask_data"):
     with h5py.File(fn, 'r') as fh:   
-        if dataset not in fh.keys():  return None
+        if dataset not in fh.keys():
+            return None
         data = np.array(  fh[dataset][:]  )     
     
-    if data.dtype==np.uint8:         pass
+    if data.dtype == np.uint8:
+        pass
     else:
         if data.max()<=1:  data = (data*255).astype(np.uint8)
 
@@ -471,3 +503,15 @@ def check_keys(out_dir, fn, im, t):
 ############################################
 # ##########################################      
         
+
+if __name__ == "__main__":
+
+    import glob
+    from GUI_functions import *
+
+    path = 'C:/Python/music/recordings/hypercubes'
+    #path = GUIgetdir()
+    searchpath = path + r'/*h5'
+    filenames = glob.glob(searchpath)
+    an = Annotate(filenames, exclude_labeled=False, run=True)
+    an.open_window()
