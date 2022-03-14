@@ -47,7 +47,7 @@ class Annotate():
     def open_window(self):
 
         plt.rcParams['keymap.fullscreen'] = []
-        fig, ax = plt.subplots(figsize=(18, 15))
+        fig, ax = plt.subplots(figsize=(15, 12))
         self.fig = fig
         self.ax = ax
         self.fig.canvas.mpl_connect('button_press_event', self.onClick)
@@ -220,7 +220,7 @@ class Annotate():
                 self.cur_polygons = deepcopy(last_poly)
             self.draw_image()
 
-        if event.key == "ctrl+s":
+        if event.key == "o":
             self.save_label_images()
 
     def onClick(self, event):
@@ -286,7 +286,7 @@ class Annotate():
     ## Drawing
     ###########################################
 
-    def save_label_images(self):
+    def save_label_images(self, plot=1):
 
         filenames = self.filenames
         polygons = self.polygons
@@ -301,11 +301,29 @@ class Annotate():
             print("saving labels for " + str(len(poly)) + " objects:" + fn)
             im = self.read_image(fn)
             labeled = self.gen_index_image(im, poly)
+            if plot:
+                plt.imshow(labeled)
+                plt.title('labeled')
+                plt.show()
+            self.save_labeled(fn, labeled)
+            print('labels saved')
+
+    def save_current_label_images(self, plot=1):  # todo needs testing
+
+        fn = self.filenames[self.cur_idx]
+
+        if len(self.cur_polygons) == 0:
+            pass
+
+        print("saving labels for " + str(len(self.cur_polygons)) + " objects:" + fn)
+        im = self.read_image(fn)
+        labeled = self.gen_index_image(im, self.cur_polygons)
+        if plot:
             plt.imshow(labeled)
             plt.title('labeled')
             plt.show()
-            self.save_labeled(fn, labeled)
-            print('labels saved')
+        self.save_labeled(fn, labeled)
+        print('labels saved')
 
     def gen_index_image(self, im, poly):
 
@@ -401,7 +419,7 @@ def add_dataset(fn, data, dataset="labels"):
             fh[dataset] = data
         else:
             fh.create_dataset(dataset, data=data, compression="lzf")
-
+    fn.close()
 
 def add_dataset_hypercube(fn, data, dataset="labels"):
     with h5py.File(fn, 'r+') as fh:
@@ -410,7 +428,7 @@ def add_dataset_hypercube(fn, data, dataset="labels"):
             fh['hypercube'][dataset] = data
         else:
             fh['hypercube'].create_dataset(dataset, data=data, compression="lzf")
-
+    fh.close()
 
 def resize_label(fn):
     lbl = read_H5(fn, dataset="labels")
@@ -427,7 +445,7 @@ def resize_label_hypercube(fn):
     if lbl is None:
         return
 
-    msk = read_H5_hypercube(fn, dataset="mask_data")
+    msk = read_H5_hypercube(fn, dataset="data")
     lbl = cv2.resize(lbl, msk.shape[::-1])
     add_dataset_hypercube(fn, lbl, dataset="labels")
 
@@ -550,5 +568,5 @@ if __name__ == "__main__":
     # path = GUIgetdir()
     searchpath = path + r'/*h5'
     filenames = glob.glob(searchpath)
-    an = Annotate(filenames, exclude_labeled=False, run=True)
+    an = Annotate(filenames, exclude_labeled=True, run=True)
     an.save_label_images()
