@@ -1,17 +1,18 @@
 """turn off sciview in File -> Settings.... -> Tools -> SciView"""
 
 import matplotlib
+
 matplotlib.use('TkAgg')
 import matplotlib.pyplot as plt
 import numpy as np
-from skimage.draw import polygon2mask, circle
+from skimage.draw import polygon2mask, disk
 from skimage import io
 from copy import deepcopy
 import cv2
 
 
 ###############################
-#  Annotator 
+#  Annotator
 ###############################
 
 class Annotate():
@@ -19,8 +20,9 @@ class Annotate():
     def __init__(self, filenames, exclude_labeled=True, run=True):
 
         if exclude_labeled:
-            filenames = [fn for fn in filenames if not os.path.exists(fn.replace("_input", "_label"))]
-
+            filenames = [fn for fn in filenames if not os.path.exists(fn.replace("_hypercube", "_labeled_hypercube"))]
+            filenames = [fn for fn in filenames if fn.find("_labeled_hypercube") == -1]
+        print(filenames)
         if len(filenames) == 0:
             print("no images")
             return
@@ -149,14 +151,14 @@ class Annotate():
 
         # Add a table at the bottom of the axes
         table = plt.table(cellText=instr, loc='top')
-        table.set_fontsize(12)
+        table.set_fontsize(30)
         table.scale(1, 3)
 
         fn_str = self.filenames[self.im_idx]
-        fn_str = ("..." + fn_str[-30:] if len(fn_str) > 30 else fn_str)
+        fn_str = ("..." + fn_str[-20:] if len(fn_str) > 20 else fn_str)
 
         # self.ax.set_title( instructions , fontsize = 20  )
-        self.ax.set_xlabel(fn_str + "\n Label " + str(self.cur_idx), fontsize=20)
+        self.ax.set_xlabel(fn_str + "\n Label " + str(self.cur_idx), fontsize=40)
         self.draw_polygons()
 
     ###########################################
@@ -165,6 +167,16 @@ class Annotate():
 
     def onKey(self, event):
         if event.key == 'right':
+
+            filenames = self.filenames
+            print(self.cur_polygons)
+            self.polygons[self.im_idx] = self.cur_polygons
+            poly = self.polygons[self.im_idx]
+            print(poly)
+            if len(poly) == 0:
+                add_dataset_hypercube(filenames[self.cur_idx], [0], dataset="labels")
+                print('label saved')
+                self.polygons[self.im_idx] = {1}
             self.change_image(1)
 
         if event.key == 'left':
@@ -220,8 +232,9 @@ class Annotate():
                 self.cur_polygons = deepcopy(last_poly)
             self.draw_image()
 
-        if event.key == "o":
-            self.save_label_images()
+    #        if event.key == "s":           opent jpg window voor geen reden en saved
+    #            self.polygons[self.im_idx] = self.cur_polygons
+    #            self.save_label_images()
 
     def onClick(self, event):
 
@@ -294,19 +307,21 @@ class Annotate():
         for i, fn in enumerate(filenames):
 
             poly = polygons[i]
+            print(poly)
+            if i <= self.im_idx:
+                if len(poly) == 0:
+                    os.rename(fn, fn.replace("_hypercube", "_labeled_hypercube"))
+                    continue
 
-            if len(poly) == 0:
-                continue
-
-            print("saving labels for " + str(len(poly)) + " objects:" + fn)
-            im = self.read_image(fn)
-            labeled = self.gen_index_image(im, poly)
-            if plot:
-                plt.imshow(labeled)
-                plt.title('labeled')
-                plt.show()
-            self.save_labeled(fn, labeled)
-            print('labels saved')
+                print("saving labels for " + str(len(poly)) + " objects:" + fn)
+                im = self.read_image(fn)
+                labeled = self.gen_index_image(im, poly)
+                # if plot:
+                #    plt.imshow(labeled)
+                #    plt.title('labeled')
+                #    plt.show()
+                self.save_labeled(fn, labeled)
+                print('labels saved')
 
     def save_current_label_images(self, plot=1):  # todo needs testing
 
@@ -334,7 +349,7 @@ class Annotate():
             lab_idx, poly = labels["idx"], labels["pts"]
             if len(poly) == 1:
                 poly_coor = np.round(poly)[:, ::-1]
-                mask = circle(poly_coor[0, 0], poly_coor[0, 1], 10)
+                mask = disk(poly_coor[0, 0], poly_coor[0, 1], 10)
                 label_im[mask] = lab_idx + 1
 
             if len(poly) > 2:
@@ -351,7 +366,7 @@ class Annotate():
 
 
 ###########################################
-#     Helper Functions 
+#     Helper Functions
 ###########################################
 import h5py
 
@@ -365,7 +380,8 @@ def save_labeled(fn, label_im):
         if fn.find("_labeled_hypercube") == -1:
             os.rename(fn, fn.replace("_hypercube", "_labeled_hypercube"))
 
-def read_H5(fn, dataset="data"):
+
+def read_H5(fn, dataset="mask_data"):
     with h5py.File(fn, 'r') as fh:
         if dataset not in fh.keys():
             return None
@@ -420,7 +436,8 @@ def add_dataset(fn, data, dataset="labels"):
             fh[dataset] = data
         else:
             fh.create_dataset(dataset, data=data, compression="lzf")
-    fh.close()
+    fn.close()
+
 
 def add_dataset_hypercube(fn, data, dataset="labels"):
     with h5py.File(fn, 'r+') as fh:
@@ -431,12 +448,13 @@ def add_dataset_hypercube(fn, data, dataset="labels"):
             fh['hypercube'].create_dataset(dataset, data=data, compression="lzf")
     fh.close()
 
+
 def resize_label(fn):
-    lbl = read_H5_hypercube(fn, dataset="labels")
+    lbl = read_H5(fn, dataset="labels")
     if lbl is None:
         return
 
-    msk = read_H5_hypercube(fn, dataset="data")
+    msk = read_H5(fn, dataset="mask_data")
     lbl = cv2.resize(lbl, msk.shape[::-1])
     add_dataset(fn, lbl, dataset="labels")
 
@@ -452,7 +470,7 @@ def resize_label_hypercube(fn):
 
 
 ###########################################
-##          Video Frame Selecting 
+##          Video Frame Selecting
 ###########################################
 
 def select_video_frames(filename, out_dir="./training"):
@@ -552,10 +570,11 @@ def check_keys(out_dir, fn, im, t):
 
 
 ############################################
-# ##########################################      
+# ##########################################
 
 
 if __name__ == "__main__":
+
     import glob
     # from GUI_functions import *
     import os
@@ -563,12 +582,16 @@ if __name__ == "__main__":
     computername = os.environ['COMPUTERNAME']
     if computername == 'DESKTOP-1GPHDLQ':
         path = 'C:/Python/music/recordings/hypercube/VDS_RGB/'
-        #path = 'C:/Python/music/recordings/hypercube/'
-        #path = 'C:/Python/music/recordings/20220209\measurements\hypercube'
     else:
-        path = 'C:/Python/music/recordings/hypercube/'  # todo: change this path
+        path = 'C:/Users/Op3Mech_VR/Downloads/data/'  # todo: change this path
+
     # path = GUIgetdir()
+
     searchpath = path + r'/*h5'
+    print(searchpath)
     filenames = glob.glob(searchpath)
     an = Annotate(filenames, exclude_labeled=True, run=True)
+    plt.show()
     an.save_label_images()
+
+
