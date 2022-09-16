@@ -25,23 +25,26 @@ import cv2
 import easygui as eg
 import pandas as pd
 import sys
+import os
+import glob
+import h5py
 
 #############################################################################
 
 class menu():
     def __init__(self,exclude_labeled=True):
         self.folder = ""
-        self.excell = None
+        self.excel = None
         self.labels = []
         self.exclude_labeled = exclude_labeled
         self.mainmenu()
 
     def mainmenu(self):
-        event = eg.indexbox("Choose user","yoinky :>",["Choose save path","Choose excell path", f"exclude labeled: {self.exclude_labeled}", "klaar"])
+        event = eg.indexbox(f"Welcome to the annotation toolbox for Tetra project Inspect 4.0.\n\nTo re-label images set 'exclude labeled' to 'False'\nselected folder: {self.folder}\nlabels-excel: {self.excel}","Inspect 4.0",["Choose folder","Choose excel path", f"exclude labeled: {self.exclude_labeled}", "Start","Exit"])
         if event == 0:
             self.pathmenu()
         elif event == 1:
-            self.excellmenu()
+            self.excelmenu()
         elif event == 2:
             self.exclude_labeled = not self.exclude_labeled
             self.mainmenu()
@@ -50,33 +53,67 @@ class menu():
         else:
             print('exit menu')
         
-    def excellmenu(self):
+    def excelmenu(self):
         try:
             if self.folder != None:
                 os.chdir(self.folder)
-            self.excell = eg.fileopenbox("Choose excelldocumentje", default="*.xlsx", filetypes=["*.xls", "*.xlsx"])
-            df = pd.read_excel (self.excell)
+            self.excel = eg.fileopenbox("Choose excel file containing labels", default="*.xlsx", filetypes=["*.xls", "*.xlsx"])
+            df = pd.read_excel (self.excel)
             mylist = df['label'].tolist()
             for i in range(len(mylist)):
                 self.labels.append([mylist[i]])
         except:
             print('no labels imported')
-        #if self.folder != "" and self.excell != None:
+        #if self.folder != "" and self.excel != None:
         #    pass
         self.mainmenu()
  
 
     def pathmenu(self):
-        self.folder = eg.diropenbox("Choose place to save")
-        if self.folder != "" and self.excell == None:
-            self.excellmenu()
-        elif self.folder != "" and self.excell != None:
+        self.folder = eg.diropenbox("Select the directory that contains the images that should be annotated.")
+        if self.folder != None and self.excel == None:
+            self.excelmenu()
+        elif self.folder != None and self.excel != None:
             pass
         else:
             self.mainmenu()
+
+    def savemenu(selfself):
+        event = eg.indexbox(
+            f"Would you like to save the annotations made?","Inspect 4.0",
+            ["yes", "no"])
+        if event == 0:
+            print('saved')
+            return 1
+        elif event == 1:
+            print('not saved')
+            return 0
+        else:
+            print('exit savemenu')
+            return 0
 #############################################################################
 
+class save_menu():
+    def __init__(self,exclude_labeled=True):
+        self.folder = None
+        self.excel = None
+        self.labels = []
+        self.exclude_labeled = exclude_labeled
+        self.savemenu()
 
+    def savemenu(selfself):
+        event = eg.indexbox(
+            f"Would you like to save the annotations made?","Inspect 4.0",
+            ["yes", "no"])
+        if event == 0:
+            print('saved')
+            return 1
+        elif event == 1:
+            print('not saved')
+            return 0
+        else:
+            print('exit savemenu')
+            return 0
 
 ###############################
 #  Annotator 
@@ -88,9 +125,10 @@ class Annotate():
 
         self.m = menu(exclude_labeled)
         exclude_labeled = self.m.exclude_labeled
-        self.excell = self.m.excell
+        self.excel = self.m.excel
         if not os.path.exists(self.m.folder):
-            print('folder does not exist')
+            if not self.m.folder == "":
+                print('folder does not exist')
             sys.exit()
         searchpath = self.m.folder + r'/*h5'
         print(searchpath)
@@ -104,8 +142,8 @@ class Annotate():
             print("no images")
             return
 
-        self.layers = bands
-        self.band = 0
+        self.layers = bands  # selection of bands to load from h5 hypercube (list)
+        self.band = 0  # band index to display in viewer (int)
 
         self.filenames = filenames
         self.im_idx = 0
@@ -116,17 +154,16 @@ class Annotate():
         self.clrs_fill = ["#ffffff","#fc0303","#cafc03","#1403fc"]
         self.drawn = []
 
-        self.model = None
-        self.draw_prediction = False
-        self.draw_label = False
+        self.model = None       # ML model to make label predictions
+        self.draw_prediction = False  #draws  labels based on a prediction by a provided model
+        self.draw_label = False  #draws previously applied labels
 
         self.polygons = [[] for i in range(len(filenames))]
         self.cur_polygons = []
 
-        self.nbands = None
-
         if run:
             self.open_window()
+
 
     def open_window(self):
 
@@ -139,13 +176,14 @@ class Annotate():
         self.fig.canvas.mpl_connect('scroll_event', self.onScroll)
         self.draw_image()
 
+
     def read_image(self, filename):
 
         im = None
         if ".jpg" in filename.lower() or ".tif" in filename.lower():
             im = cv2.imread(filename)
         if "hypercube.h5" in filename.lower():
-            im = read_H5_hypercube(filename, all=self.layers)
+            im = read_H5_hypercube(filename, bands=self.layers)
             print(im.shape)
         elif ".h5" in filename.lower():
             im = read_H5(filename)
@@ -199,11 +237,11 @@ class Annotate():
 
     def draw_image(self):
 
-        hc = self.load_data()
+        hc = self.load_data()   # loads the next hypercube image
         im = hc[:, :, self.band]  # choose band in case of hyperspectral data, band is a list, THIS IS THE ONE YOU DRAW LATER ON
-        self.ax.clear()
+        self.ax.clear()  # The Axes.clear() function in axes module of matplotlib library is used to clear the axes
 
-        if self.model is not None:
+        if self.model is not None:  # if a model is provided, the prediction can be shown
             if self.draw_prediction:
                 im_in = np.mean(im, axis=2)
                 pred = self.model.segment(im_in)
@@ -224,7 +262,7 @@ class Annotate():
         if im.shape[-1] == 1:
             im = im * [1, 1, 1]
         im = im.astype(np.uint8)
-        self.ax.imshow(im)
+        self.ax.imshow(im, cmap=self.cmap)
         self.ax.set_xticks([])
         self.ax.set_yticks([])
 
@@ -232,7 +270,7 @@ class Annotate():
         instr = [["←: Last Image"], ["→: Next Image"],
                  ["↑: Next label"], ["↓: Previous label"],
                  ["Backspace: Remove Point"], ["Enter/Right Click: Next Object"],
-                 ["Escape: Close Tool"], ["f: Toggle fill opacity " + "(" + str(self.fill) + ")"], ["i: More information"]]
+                 ["Escape: Close Tool"], ["f: Toggle fill opacity " + "(" + str(self.fill) + ")"], ["j,g,r: Toggle color scheme"],["1,2 scroll through bands"]]
         table_instr = plt.table(cellText=instr, loc='right', cellLoc='left')
         table_instr.set_fontsize(12)
         table_instr.scale(0.5, 2.5)
@@ -284,12 +322,14 @@ class Annotate():
             self.cur_idx = max(0, self.cur_idx - 1)
             self.submit_polygon()
             self.draw_image()
+            self.draw_polygons()
             self.update()
 
         if event.key == 'enter':
             self.submit_polygon()
 
         if event.key == 'escape':
+            self.submit_polygon()
             self.polygons[self.im_idx] = self.cur_polygons
             plt.close(self.fig)
 
@@ -309,18 +349,25 @@ class Annotate():
         if event.key == "j":
             self.cmap = "jet"
             self.draw_image()
+            self.draw_polygons()
+            self.update()
 
         if event.key == "g":
             self.cmap = "gray"
             self.draw_image()
+            self.draw_polygons()
+            self.update()
 
         if event.key == "l":
             self.draw_label = not self.draw_label
             self.draw_image()
+            self.draw_polygons()
+            self.update()
 
         if event.key == "m":
             self.draw_prediction = not self.draw_prediction
             self.draw_image()
+            self.update()
 
         if event.key == "c":
             last_poly = self.polygons[self.im_idx - 1]
@@ -328,16 +375,23 @@ class Annotate():
                 self.cur_polygons = deepcopy(last_poly)
             self.draw_image()
 
-        if event.key == "1":
-            self.band = self.band+1 if self.band<len(self.layers)-1 else len(self.layers)-1
-            self.change_image()
-            self.update()
-
         if event.key == "2":
-            self.band -=1
-            self.change_image()
-            self.update()
+            if self.band<len(self.layers)-1:
+                self.band = self.band+1  #layers is a list, band is an int
+                print(f'band {self.band} of {self.layers}')
+                self.change_image()
+                self.update()
+            else:
+                print('cannot decrease band')
 
+        if event.key == "1":
+            if self.band > 0:
+                self.band -= 1
+                print(f'band {self.band} of {self.layers}')
+                self.change_image()
+                self.update()
+            else:
+                print('cannot increase band')
     def onClick(self, event):
 
         if event.button == 1:  ## Left click
@@ -360,6 +414,7 @@ class Annotate():
 
     def onScroll(self, event):
         self.change_image(int(event.step))
+
 
     ###########################################
     ## Image stuff
@@ -398,8 +453,9 @@ class Annotate():
                     L_idx = L_idx - len(clrs_lines)*(F_idx+1)
                 polygons = np.array(poly["pts"])
                 self.drawn.extend(self.ax.fill(polygons[:, 0], polygons[:, 1], clrs_fill[F_idx], alpha=fill_alpha))
+                # ax.fill plots a filled polygon.  .extend adds polygons to list 'drawn'
                 self.drawn.extend(self.ax.plot(polygons[:, 0], polygons[:, 1], color=clrs_lines[L_idx], marker=marker_types[F_idx]))
-        self.ax.figure.canvas.draw_idle()
+        self.ax.figure.canvas.draw_idle()  #This is used to update a figure that has been altered, but not automatically re-drawn.
 
     ###########################################
     ## Drawing
@@ -477,7 +533,7 @@ class Annotate():
 ###########################################
 #     Helper Functions 
 ###########################################
-import h5py
+
 
 def save_labeled(fn, label_im, label_legend=None):
     if ".jpg" in fn.lower() or ".tif" in fn.lower():
@@ -503,14 +559,14 @@ def read_H5(fn, dataset="mask_data"):
 
     return data
 
-def read_H5_hypercube(fn, dataset="data", all = []):
+def read_H5_hypercube(fn, dataset="data", bands = []):
     with h5py.File(fn, 'r') as fh:
         if dataset not in fh['hypercube'].keys():  # ammended to read the hypercube format
             return None
-        if all == []:
+        if bands == []:
             data = np.array(fh['hypercube'][dataset][:])
         else:
-            data = np.array(fh['hypercube'][dataset][:,:,all])
+            data = np.array(fh['hypercube'][dataset][:,:,bands])
 
     if data.dtype == np.uint8:
         pass
@@ -609,7 +665,7 @@ def select_dataset_frames(filename, data, out_dir="./training"):
     fn = filename.split("\\")[-1].split(".")[0]
 
     cv2.namedWindow("", cv2.WINDOW_NORMAL)
-    cv2.resizeWindow("", 900, 600)
+    cv2.resizeWindow("", 1200, 900)
 
     rate = 1000
 
@@ -681,8 +737,7 @@ def check_keys(out_dir, fn, im, t):
 
 
 if __name__ == "__main__":
-    import os
-    import glob
+
     an = Annotate(exclude_labeled=True, run=True, bands=[1])
     plt.show()
-    an.save_label_images()
+    #an.save_label_images()
