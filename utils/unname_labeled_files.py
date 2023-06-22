@@ -1,3 +1,7 @@
+"""filenames that include "_labeled" are ignored by the annotator tool.
+this script allows to rename all files in a folder that are marked as "_labeled_hypercube" to "_hypercube"
+"""
+
 import GUI_functions
 import glob
 import os

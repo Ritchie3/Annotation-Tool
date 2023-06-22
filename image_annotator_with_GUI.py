@@ -10,7 +10,6 @@ added functionality:
  - label_legend created in export h5 file
  
  a mask image is created with 1 band. the pixel value is dependant on the layer number: 1,2,3,...
- 
   
 """
 
